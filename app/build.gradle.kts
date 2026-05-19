@@ -30,6 +30,11 @@ android {
             "OPENAI_API_KEY",
             "\"${localProperties.getProperty("OPENAI_API_KEY", "")}\"",
         )
+        buildConfigField(
+            "Boolean",
+            "USE_FAKE_OPENAI",
+            (project.findProperty("UITEST_FAKE_OPENAI") as? String ?: "false"),
+        )
     }
 
     buildFeatures {

@@ -190,9 +190,27 @@ private fun FridgeChefApp(factory: FridgeChefViewModelFactory, settingsViewModel
         else -> Scaffold(
             bottomBar = {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    NavigationBarItem(selected = tab == Tab.Catalog, onClick = { tab = Tab.Catalog }, icon = { Icon(Icons.Outlined.Home, null) }, label = { Text("Catalog") })
-                    NavigationBarItem(selected = tab == Tab.Recipes, onClick = { tab = Tab.Recipes; recipes.load() }, icon = { Icon(Icons.Outlined.GridView, null) }, label = { Text("Recipes") })
-                    NavigationBarItem(selected = tab == Tab.Settings, onClick = { tab = Tab.Settings }, icon = { Icon(Icons.Outlined.Tune, null) }, label = { Text("Settings") })
+                    NavigationBarItem(
+                        selected = tab == Tab.Catalog,
+                        onClick = { tab = Tab.Catalog },
+                        icon = { Icon(Icons.Outlined.Home, contentDescription = "Catalog tab") },
+                        label = { Text("Catalog") },
+                        modifier = Modifier.testTag("nav.catalog"),
+                    )
+                    NavigationBarItem(
+                        selected = tab == Tab.Recipes,
+                        onClick = { tab = Tab.Recipes; recipes.load() },
+                        icon = { Icon(Icons.Outlined.GridView, contentDescription = "Recipes tab") },
+                        label = { Text("Recipes") },
+                        modifier = Modifier.testTag("nav.recipes"),
+                    )
+                    NavigationBarItem(
+                        selected = tab == Tab.Settings,
+                        onClick = { tab = Tab.Settings },
+                        icon = { Icon(Icons.Outlined.Tune, contentDescription = "Settings tab") },
+                        label = { Text("Settings") },
+                        modifier = Modifier.testTag("nav.settings"),
+                    )
                 }
             },
         ) { padding ->
@@ -244,12 +262,12 @@ private fun CatalogScreen(viewModel: CatalogViewModel, padding: PaddingValues, o
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("catalog.dish.field"),
                         textStyle = MaterialTheme.typography.bodyMedium,
                         placeholder = { Text("How to cook...") },
                         singleLine = true,
                         trailingIcon = {
-                            TextButton(onClick = { viewModel.generateDish(query) }) { Text("Go") }
+                            TextButton(onClick = { viewModel.generateDish(query) }, modifier = Modifier.testTag("catalog.go.button")) { Text("Go") }
                         },
                     )
                     Text("Enter the name of any dish", style = MaterialTheme.typography.labelMedium, color = secondaryText())
@@ -269,10 +287,10 @@ private fun CatalogScreen(viewModel: CatalogViewModel, padding: PaddingValues, o
                     contentPadding = PaddingValues(horizontal = 10.dp),
                 ) {
                     items(cards) { card ->
-                        CategoryCard(card.first, card.second, Modifier.padding(6.dp)) { viewModel.generateMeal(card.third) }
+                        CategoryCard(card.first, card.second, Modifier.padding(6.dp).testTag("catalog.card.${card.third.displayName}")) { viewModel.generateMeal(card.third) }
                     }
                     item {
-                        CategoryCard("From my\nfridge", "Snap a photo", Modifier.padding(6.dp)) {
+                        CategoryCard("From my\nfridge", "Snap a photo", Modifier.padding(6.dp).testTag("catalog.card.fridge")) {
                             photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         }
                     }
@@ -289,7 +307,7 @@ private fun CatalogScreen(viewModel: CatalogViewModel, padding: PaddingValues, o
                         containerColor = terracotta(),
                         contentColor = Color.White,
                         shape = CircleShape,
-                        modifier = Modifier.size(56.dp),
+                        modifier = Modifier.size(56.dp).testTag("catalog.magic.button"),
                     ) { Icon(Icons.Filled.AutoAwesome, contentDescription = "Surprise me", modifier = Modifier.size(24.dp)) }
                     Text("Can't decide what to cook?\nJust press the button", textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium, color = secondaryText())
                 }
@@ -349,7 +367,14 @@ private fun RecipesScreen(
 ) {
     val batches by viewModel.batches.collectAsState()
     val filter by viewModel.filter.collectAsState()
-    val visibleBatches = viewModel.visibleBatches()
+    val visibleBatches = if (filter == RecipeFilter.All) {
+        batches
+    } else {
+        batches.mapNotNull { batch ->
+            val favorites = batch.recipes.filter { it.isFavorite }
+            if (favorites.isEmpty()) null else batch.copy(recipes = favorites)
+        }
+    }
     var pendingDelete by remember { mutableStateOf<RecipeBatch?>(null) }
     LaunchedEffect(Unit) { viewModel.load() }
     LazyColumn(

@@ -4,6 +4,7 @@ import android.app.Application
 import com.zeekrbaha.fridgechef.data.AppPreferences
 import com.zeekrbaha.fridgechef.data.RecipeSqliteStore
 import com.zeekrbaha.fridgechef.network.BuildConfigAPIKeyProvider
+import com.zeekrbaha.fridgechef.network.FakeOpenAIClient
 import com.zeekrbaha.fridgechef.network.OpenAIChatClient
 
 class FridgeChefApplication : Application() {
@@ -14,7 +15,7 @@ class FridgeChefApplication : Application() {
         super.onCreate()
         val preferences = AppPreferences(this)
         dependencies = Dependencies(
-            openAIClient = OpenAIChatClient(BuildConfigAPIKeyProvider()),
+            openAIClient = if (BuildConfig.USE_FAKE_OPENAI) FakeOpenAIClient() else OpenAIChatClient(BuildConfigAPIKeyProvider()),
             recipeStore = RecipeSqliteStore(this),
             preferences = preferences,
         )

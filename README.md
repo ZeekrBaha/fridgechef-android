@@ -64,13 +64,15 @@ GRADLE_USER_HOME=/private/tmp/gradlehome ./gradlew testDebugUnitTest assembleDeb
 Run connected emulator UI tests:
 
 ```bash
-GRADLE_USER_HOME=/private/tmp/gradlehome ./gradlew connectedDebugAndroidTest
+GRADLE_USER_HOME=/private/tmp/gradlehome ./gradlew -PUITEST_FAKE_OPENAI=true connectedDebugAndroidTest
 ```
+
+`UITEST_FAKE_OPENAI=true` swaps in deterministic recipe and daily-pick responses for instrumented UI runs. Normal app builds still use the real OpenAI client.
 
 Current verified status:
 
-- `testDebugUnitTest assembleDebug`: passing
-- `connectedDebugAndroidTest`: 2 tests passing on `Pixel_8_API_36`
+- `testDebugUnitTest assembleDebug assembleDebugAndroidTest`: passing
+- `connectedDebugAndroidTest`: 8 tests passing on `Pixel_8_API_36`
 
 ## GitHub
 
