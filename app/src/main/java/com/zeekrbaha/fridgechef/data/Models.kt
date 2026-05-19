@@ -12,6 +12,8 @@ data class Recipe(
     val ingredients: List<String>,
     val steps: List<String>,
     val estimatedTime: String,
+    val isFavorite: Boolean = false,
+    val updatedAtEpochMillis: Long? = null,
 )
 
 data class RecipeBatch(
@@ -20,6 +22,7 @@ data class RecipeBatch(
     val inputIngredients: List<String> = emptyList(),
     val inputImageThumbnailJpeg: ByteArray? = null,
     val recipes: List<Recipe>,
+    val source: RecipeSource = RecipeSource.Ai,
 )
 
 @Serializable
@@ -43,6 +46,11 @@ enum class RecipeStyle(val promptFragment: String) {
     RestaurantStyle("restaurant-style"),
     OnePot("one-pot"),
     Vegetarian("vegetarian"),
+}
+
+enum class RecipeSource {
+    Ai,
+    User,
 }
 
 enum class ThemePreference {
