@@ -81,6 +81,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -359,13 +360,15 @@ private fun RecipesScreen(
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Recipes", style = MaterialTheme.typography.displayLarge)
-                IconButton(onClick = onCreate) { Icon(Icons.Filled.Add, contentDescription = "New recipe", tint = sage()) }
+                IconButton(onClick = onCreate, modifier = Modifier.testTag("recipes.create.button")) {
+                    Icon(Icons.Filled.Add, contentDescription = "New recipe", tint = sage())
+                }
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(Space.s8)) {
-                FilterButton("All", filter == RecipeFilter.All) { viewModel.setFilter(RecipeFilter.All) }
-                FilterButton("Favorites", filter == RecipeFilter.Favorites) { viewModel.setFilter(RecipeFilter.Favorites) }
+                FilterButton("All", "recipes.filter.all", filter == RecipeFilter.All) { viewModel.setFilter(RecipeFilter.All) }
+                FilterButton("Favorites", "recipes.filter.favorites", filter == RecipeFilter.Favorites) { viewModel.setFilter(RecipeFilter.Favorites) }
             }
         }
         if (visibleBatches.isEmpty()) {
@@ -386,7 +389,7 @@ private fun RecipesScreen(
                             Text(batch.recipes.firstOrNull()?.title ?: "Recipe batch", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                             Text("${batch.recipes.size} recipes · ${batch.source.name.lowercase()}", style = MaterialTheme.typography.labelMedium, color = secondaryText())
                         }
-                        IconButton(onClick = { pendingDelete = batch }) {
+                        IconButton(onClick = { pendingDelete = batch }, modifier = Modifier.testTag("recipes.delete.batch")) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete batch", tint = terracotta())
                         }
                     }
@@ -408,9 +411,10 @@ private fun RecipesScreen(
 }
 
 @Composable
-private fun FilterButton(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun FilterButton(label: String, tag: String, selected: Boolean, onClick: () -> Unit) {
     TextButton(
         onClick = onClick,
+        modifier = Modifier.testTag(tag),
         colors = ButtonDefaults.textButtonColors(
             containerColor = if (selected) sage().copy(alpha = 0.18f) else Color.Transparent,
             contentColor = if (selected) sage() else secondaryText(),
@@ -467,7 +471,7 @@ private fun RecipeCard(recipe: Recipe, onClick: () -> Unit, onDelete: (() -> Uni
             Row(Modifier.align(Alignment.TopEnd).padding(Space.s8), verticalAlignment = Alignment.CenterVertically) {
                 if (recipe.isFavorite) Icon(Icons.Filled.Favorite, null, tint = terracotta(), modifier = Modifier.size(16.dp))
                 if (onDelete != null) {
-                    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp).testTag("batch.delete.recipe")) {
                         Icon(Icons.Filled.Delete, contentDescription = "Delete recipe", tint = terracotta(), modifier = Modifier.size(18.dp))
                     }
                 }
@@ -485,14 +489,14 @@ private fun RecipeDetailScreen(recipe: Recipe, onBack: () -> Unit, onEdit: () ->
                 title = {},
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
                 actions = {
-                    IconButton(onClick = { onFavorite(!recipe.isFavorite) }) {
+                    IconButton(onClick = { onFavorite(!recipe.isFavorite) }, modifier = Modifier.testTag("detail.favorite.button")) {
                         Icon(
                             if (recipe.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                             contentDescription = "Favorite recipe",
                             tint = terracotta(),
                         )
                     }
-                    IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = "Edit recipe", tint = sage()) }
+                    IconButton(onClick = onEdit, modifier = Modifier.testTag("detail.edit.button")) { Icon(Icons.Filled.Edit, contentDescription = "Edit recipe", tint = sage()) }
                 },
             )
         },
@@ -530,6 +534,7 @@ private fun CreateEditRecipeScreen(target: EditorTarget, onCancel: () -> Unit, o
                 actions = {
                     TextButton(
                         enabled = isValid,
+                        modifier = Modifier.testTag("create.save.button"),
                         onClick = {
                             onSave(
                                 Recipe(
@@ -559,7 +564,7 @@ private fun CreateEditRecipeScreen(target: EditorTarget, onCancel: () -> Unit, o
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("create.title.field"),
                     textStyle = MaterialTheme.typography.titleLarge,
                     label = { Text("Title") },
                     singleLine = true,
@@ -569,7 +574,7 @@ private fun CreateEditRecipeScreen(target: EditorTarget, onCancel: () -> Unit, o
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("create.description.field"),
                     textStyle = MaterialTheme.typography.bodyMedium,
                     label = { Text("Description") },
                     minLines = 4,
@@ -598,7 +603,7 @@ private fun CreateEditRecipeScreen(target: EditorTarget, onCancel: () -> Unit, o
                 OutlinedTextField(
                     value = estimatedTime,
                     onValueChange = { estimatedTime = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("create.time.field"),
                     textStyle = MaterialTheme.typography.bodyMedium,
                     label = { Text("Estimated time") },
                     placeholder = { Text("30 min") },
@@ -626,7 +631,7 @@ private fun DynamicStringSection(
                     onValueChange = { newValue ->
                         onValuesChange(values.toMutableList().also { it[index] = newValue })
                     },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).testTag("${title.lowercase()}.row.$index.field"),
                     textStyle = MaterialTheme.typography.bodyMedium,
                     minLines = minLines,
                 )
@@ -636,7 +641,7 @@ private fun DynamicStringSection(
                 ) { Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = terracotta()) }
             }
         }
-        TextButton(onClick = { onValuesChange(values + "") }) { Text(addLabel) }
+        TextButton(onClick = { onValuesChange(values + "") }, modifier = Modifier.testTag("${title.lowercase()}.add")) { Text(addLabel) }
     }
 }
 
