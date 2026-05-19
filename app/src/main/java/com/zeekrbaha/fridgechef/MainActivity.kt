@@ -41,8 +41,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.OutdoorGrill
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Tune
@@ -100,9 +105,11 @@ import com.zeekrbaha.fridgechef.ui.theme.TerracottaLight
 import com.zeekrbaha.fridgechef.viewmodel.CatalogState
 import com.zeekrbaha.fridgechef.viewmodel.CatalogViewModel
 import com.zeekrbaha.fridgechef.viewmodel.FridgeChefViewModelFactory
+import com.zeekrbaha.fridgechef.viewmodel.RecipeFilter
 import com.zeekrbaha.fridgechef.viewmodel.RecipesViewModel
 import com.zeekrbaha.fridgechef.viewmodel.SettingsViewModel
 import java.io.ByteArrayOutputStream
+import java.util.UUID
 import kotlin.math.max
 
 class MainActivity : ComponentActivity() {
@@ -121,6 +128,8 @@ class MainActivity : ComponentActivity() {
 
 private enum class Tab { Catalog, Recipes, Settings }
 
+private data class EditorTarget(val recipe: Recipe? = null, val batchId: String? = null)
+
 @Composable
 private fun FridgeChefApp(factory: FridgeChefViewModelFactory, settingsViewModel: SettingsViewModel) {
     val catalog: CatalogViewModel = viewModel(factory = factory)
@@ -128,6 +137,7 @@ private fun FridgeChefApp(factory: FridgeChefViewModelFactory, settingsViewModel
     var tab by rememberSaveable { mutableStateOf(Tab.Catalog) }
     var activeBatch by remember { mutableStateOf<RecipeBatch?>(null) }
     var activeRecipe by remember { mutableStateOf<Recipe?>(null) }
+    var editorTarget by remember { mutableStateOf<EditorTarget?>(null) }
 
     LaunchedEffect(Unit) {
         catalog.refreshDailyPicksIfStale()
@@ -135,8 +145,47 @@ private fun FridgeChefApp(factory: FridgeChefViewModelFactory, settingsViewModel
     }
 
     when {
-        activeRecipe != null -> RecipeDetailScreen(activeRecipe!!, onBack = { activeRecipe = null })
-        activeBatch != null -> RecipeBatchScreen(activeBatch!!, onRecipe = { activeRecipe = it }, onBack = { activeBatch = null })
+        editorTarget != null -> CreateEditRecipeScreen(
+            target = editorTarget!!,
+            onCancel = { editorTarget = null },
+            onSave = { recipe, batchId ->
+                if (batchId == null) {
+                    recipes.createRecipe(recipe) {
+                        editorTarget = null
+                        activeBatch = it
+                    }
+                } else {
+                    recipes.updateRecipe(recipe, batchId) { updated ->
+                        editorTarget = null
+                        activeRecipe = updated
+                        activeBatch = activeBatch?.replacing(updated)
+                    }
+                }
+            },
+        )
+        activeRecipe != null -> RecipeDetailScreen(
+            recipe = activeRecipe!!,
+            onBack = { activeRecipe = null },
+            onEdit = { editorTarget = EditorTarget(activeRecipe, activeBatch?.id) },
+            onFavorite = { favorite ->
+                val current = activeRecipe ?: return@RecipeDetailScreen
+                recipes.setFavorite(current, favorite) { updated ->
+                    activeRecipe = updated
+                    activeBatch = activeBatch?.replacing(updated)
+                }
+            },
+        )
+        activeBatch != null -> RecipeBatchScreen(
+            batch = activeBatch!!,
+            onRecipe = { activeRecipe = it },
+            onBack = { activeBatch = null },
+            onDelete = { recipe ->
+                recipes.deleteRecipe(recipe.id) { updatedBatch ->
+                    activeBatch = updatedBatch
+                    if (updatedBatch == null) activeRecipe = null
+                }
+            },
+        )
         else -> Scaffold(
             bottomBar = {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
@@ -148,7 +197,13 @@ private fun FridgeChefApp(factory: FridgeChefViewModelFactory, settingsViewModel
         ) { padding ->
             when (tab) {
                 Tab.Catalog -> CatalogScreen(catalog, padding, onBatch = { activeBatch = it; recipes.load() })
-                Tab.Recipes -> RecipesScreen(recipes, padding, onBatch = { activeBatch = it })
+                Tab.Recipes -> RecipesScreen(
+                    viewModel = recipes,
+                    padding = padding,
+                    onBatch = { activeBatch = it },
+                    onCreate = { editorTarget = EditorTarget() },
+                    onDeleteBatch = { batch -> recipes.deleteBatch(batch.id) },
+                )
                 Tab.Settings -> SettingsScreen(settingsViewModel, padding, onCleared = { recipes.load() })
             }
         }
@@ -284,27 +339,136 @@ private fun LoadingOverlay() {
 }
 
 @Composable
-private fun RecipesScreen(viewModel: RecipesViewModel, padding: PaddingValues, onBatch: (RecipeBatch) -> Unit) {
+private fun RecipesScreen(
+    viewModel: RecipesViewModel,
+    padding: PaddingValues,
+    onBatch: (RecipeBatch) -> Unit,
+    onCreate: () -> Unit,
+    onDeleteBatch: (RecipeBatch) -> Unit,
+) {
     val batches by viewModel.batches.collectAsState()
+    val filter by viewModel.filter.collectAsState()
+    val visibleBatches = viewModel.visibleBatches()
+    var pendingDelete by remember { mutableStateOf<RecipeBatch?>(null) }
     LaunchedEffect(Unit) { viewModel.load() }
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(padding),
         contentPadding = PaddingValues(Space.s24),
         verticalArrangement = Arrangement.spacedBy(Space.s12),
     ) {
-        item { Text("Recipes", style = MaterialTheme.typography.displayLarge) }
-        if (batches.isEmpty()) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Recipes", style = MaterialTheme.typography.displayLarge)
+                IconButton(onClick = onCreate) { Icon(Icons.Filled.Add, contentDescription = "New recipe", tint = sage()) }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.s8)) {
+                FilterButton("All", filter == RecipeFilter.All) { viewModel.setFilter(RecipeFilter.All) }
+                FilterButton("Favorites", filter == RecipeFilter.Favorites) { viewModel.setFilter(RecipeFilter.Favorites) }
+            }
+        }
+        if (visibleBatches.isEmpty()) {
             item { Text("No saved recipe batches yet.", style = MaterialTheme.typography.bodyMedium, color = secondaryText()) }
         } else {
-            items(batches) { batch ->
+            items(visibleBatches) { batch ->
                 Card(
                     modifier = Modifier.fillMaxWidth().clickable { onBatch(batch) },
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                     shape = RoundedCornerShape(8.dp),
                 ) {
-                    Column(Modifier.padding(Space.s16), verticalArrangement = Arrangement.spacedBy(Space.s4)) {
-                        Text(batch.recipes.firstOrNull()?.title ?: "Recipe batch", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                        Text("${batch.recipes.size} recipes", style = MaterialTheme.typography.labelMedium, color = secondaryText())
+                    Row(Modifier.padding(Space.s16), verticalAlignment = Alignment.CenterVertically) {
+                        if (batch.recipes.any { it.isFavorite }) {
+                            Icon(Icons.Filled.Favorite, null, tint = terracotta(), modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(Space.s8))
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.s4)) {
+                            Text(batch.recipes.firstOrNull()?.title ?: "Recipe batch", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                            Text("${batch.recipes.size} recipes · ${batch.source.name.lowercase()}", style = MaterialTheme.typography.labelMedium, color = secondaryText())
+                        }
+                        IconButton(onClick = { pendingDelete = batch }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete batch", tint = terracotta())
+                        }
+                    }
+                }
+            }
+        }
+    }
+    pendingDelete?.let { batch ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            confirmButton = {
+                TextButton(onClick = { onDeleteBatch(batch); pendingDelete = null }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } },
+            title = { Text("Delete recipe batch?") },
+            text = { Text("This permanently removes the saved recipes in this batch.") },
+        )
+    }
+}
+
+@Composable
+private fun FilterButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        colors = ButtonDefaults.textButtonColors(
+            containerColor = if (selected) sage().copy(alpha = 0.18f) else Color.Transparent,
+            contentColor = if (selected) sage() else secondaryText(),
+        ),
+    ) { Text(label) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecipeBatchScreen(batch: RecipeBatch, onRecipe: (Recipe) -> Unit, onBack: () -> Unit, onDelete: (Recipe) -> Unit) {
+    var pendingDelete by remember { mutableStateOf<Recipe?>(null) }
+    Scaffold(
+        topBar = { CenterAlignedTopAppBar(title = { Text("Recipe ideas") }, navigationIcon = { TextButton(onClick = onBack) { Text("Back") } }) },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(padding),
+            contentPadding = PaddingValues(Space.s24),
+            verticalArrangement = Arrangement.spacedBy(Space.s12),
+        ) {
+            item { Text("${batch.recipes.size} recipes", style = MaterialTheme.typography.labelMedium, color = secondaryText()) }
+            items(batch.recipes) { recipe -> RecipeCard(recipe, onClick = { onRecipe(recipe) }, onDelete = { pendingDelete = recipe }) }
+        }
+    }
+    pendingDelete?.let { recipe ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            confirmButton = {
+                TextButton(onClick = { onDelete(recipe); pendingDelete = null }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } },
+            title = { Text("Delete recipe?") },
+            text = { Text("This permanently removes ${recipe.title}.") },
+        )
+    }
+}
+
+@Composable
+private fun RecipeCard(recipe: Recipe, onClick: () -> Unit, onDelete: (() -> Unit)? = null) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).border(BorderStroke(1.dp, rule()), RoundedCornerShape(12.dp)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Box {
+            Column(Modifier.padding(Space.s16), verticalArrangement = Arrangement.spacedBy(Space.s4)) {
+                Text(recipe.title, style = MaterialTheme.typography.titleMedium)
+                Text(recipe.description, style = MaterialTheme.typography.bodySmall, color = secondaryText())
+                Row {
+                    Text("${recipe.ingredients.size} ingredients", style = MaterialTheme.typography.labelSmall, color = terracotta())
+                    Spacer(Modifier.width(Space.s16))
+                    Text(recipe.estimatedTime, style = MaterialTheme.typography.labelSmall, color = sage())
+                }
+            }
+            Row(Modifier.align(Alignment.TopEnd).padding(Space.s8), verticalAlignment = Alignment.CenterVertically) {
+                if (recipe.isFavorite) Icon(Icons.Filled.Favorite, null, tint = terracotta(), modifier = Modifier.size(16.dp))
+                if (onDelete != null) {
+                    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Delete recipe", tint = terracotta(), modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -314,45 +478,24 @@ private fun RecipesScreen(viewModel: RecipesViewModel, padding: PaddingValues, o
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RecipeBatchScreen(batch: RecipeBatch, onRecipe: (Recipe) -> Unit, onBack: () -> Unit) {
+private fun RecipeDetailScreen(recipe: Recipe, onBack: () -> Unit, onEdit: () -> Unit, onFavorite: (Boolean) -> Unit) {
     Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = { Text("Recipe ideas") }, navigationIcon = { TextButton(onClick = onBack) { Text("Back") } }) },
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(padding),
-            contentPadding = PaddingValues(Space.s24),
-            verticalArrangement = Arrangement.spacedBy(Space.s12),
-        ) {
-            item { Text("3 recipes generated for you", style = MaterialTheme.typography.labelMedium, color = secondaryText()) }
-            items(batch.recipes) { recipe -> RecipeCard(recipe, onClick = { onRecipe(recipe) }) }
-        }
-    }
-}
-
-@Composable
-private fun RecipeCard(recipe: Recipe, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).border(BorderStroke(1.dp, rule()), RoundedCornerShape(12.dp)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = RoundedCornerShape(12.dp),
-    ) {
-        Column(Modifier.padding(Space.s16), verticalArrangement = Arrangement.spacedBy(Space.s4)) {
-            Text(recipe.title, style = MaterialTheme.typography.titleMedium)
-            Text(recipe.description, style = MaterialTheme.typography.bodySmall, color = secondaryText())
-            Row {
-                Text("${recipe.ingredients.size} ingredients", style = MaterialTheme.typography.labelSmall, color = terracotta())
-                Spacer(Modifier.width(Space.s16))
-                Text(recipe.estimatedTime, style = MaterialTheme.typography.labelSmall, color = sage())
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun RecipeDetailScreen(recipe: Recipe, onBack: () -> Unit) {
-    Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = {}, navigationIcon = { TextButton(onClick = onBack) { Text("Back") } }) },
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {},
+                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                actions = {
+                    IconButton(onClick = { onFavorite(!recipe.isFavorite) }) {
+                        Icon(
+                            if (recipe.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = "Favorite recipe",
+                            tint = terracotta(),
+                        )
+                    }
+                    IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = "Edit recipe", tint = sage()) }
+                },
+            )
+        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(padding),
@@ -365,6 +508,135 @@ private fun RecipeDetailScreen(recipe: Recipe, onBack: () -> Unit) {
             item { SectionList("Ingredients", recipe.ingredients) }
             item { SectionList("Steps", recipe.steps.mapIndexed { index, step -> "${index + 1}. $step" }) }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CreateEditRecipeScreen(target: EditorTarget, onCancel: () -> Unit, onSave: (Recipe, String?) -> Unit) {
+    val existing = target.recipe
+    var title by rememberSaveable(existing?.id) { mutableStateOf(existing?.title.orEmpty()) }
+    var description by rememberSaveable(existing?.id) { mutableStateOf(existing?.description.orEmpty()) }
+    var ingredients by remember(existing?.id) { mutableStateOf(existing?.ingredients?.ifEmpty { listOf("") } ?: listOf("")) }
+    var steps by remember(existing?.id) { mutableStateOf(existing?.steps?.ifEmpty { listOf("") } ?: listOf("")) }
+    var estimatedTime by rememberSaveable(existing?.id) { mutableStateOf(existing?.estimatedTime.orEmpty()) }
+    val isValid = title.trim().isNotEmpty() && ingredients.any { it.trim().isNotEmpty() } && steps.any { it.trim().isNotEmpty() }
+
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text(if (existing == null) "New Recipe" else "Edit Recipe") },
+                navigationIcon = { TextButton(onClick = onCancel) { Text("Cancel") } },
+                actions = {
+                    TextButton(
+                        enabled = isValid,
+                        onClick = {
+                            onSave(
+                                Recipe(
+                                    id = existing?.id ?: UUID.randomUUID().toString(),
+                                    title = title.trim(),
+                                    description = description.trim(),
+                                    ingredients = ingredients.map { it.trim() }.filter { it.isNotEmpty() },
+                                    steps = steps.map { it.trim() }.filter { it.isNotEmpty() },
+                                    estimatedTime = estimatedTime.trim(),
+                                    isFavorite = existing?.isFavorite ?: false,
+                                    updatedAtEpochMillis = existing?.updatedAtEpochMillis,
+                                ),
+                                target.batchId,
+                            )
+                        },
+                    ) { Text("Save") }
+                },
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(padding),
+            contentPadding = PaddingValues(Space.s24),
+            verticalArrangement = Arrangement.spacedBy(Space.s16),
+        ) {
+            item {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.titleLarge,
+                    label = { Text("Title") },
+                    singleLine = true,
+                )
+            }
+            item {
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    label = { Text("Description") },
+                    minLines = 4,
+                    maxLines = 8,
+                )
+            }
+            item {
+                DynamicStringSection(
+                    title = "Ingredients",
+                    values = ingredients,
+                    addLabel = "+ Add ingredient",
+                    minLines = 1,
+                    onValuesChange = { ingredients = it },
+                )
+            }
+            item {
+                DynamicStringSection(
+                    title = "Steps",
+                    values = steps,
+                    addLabel = "+ Add step",
+                    minLines = 2,
+                    onValuesChange = { steps = it },
+                )
+            }
+            item {
+                OutlinedTextField(
+                    value = estimatedTime,
+                    onValueChange = { estimatedTime = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    label = { Text("Estimated time") },
+                    placeholder = { Text("30 min") },
+                    singleLine = true,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DynamicStringSection(
+    title: String,
+    values: List<String>,
+    addLabel: String,
+    minLines: Int,
+    onValuesChange: (List<String>) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.s8)) {
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        values.forEachIndexed { index, value ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { newValue ->
+                        onValuesChange(values.toMutableList().also { it[index] = newValue })
+                    },
+                    modifier = Modifier.weight(1f),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    minLines = minLines,
+                )
+                IconButton(
+                    enabled = values.size > 1,
+                    onClick = { onValuesChange(values.toMutableList().also { it.removeAt(index) }) },
+                ) { Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = terracotta()) }
+            }
+        }
+        TextButton(onClick = { onValuesChange(values + "") }) { Text(addLabel) }
     }
 }
 
@@ -419,6 +691,10 @@ private fun ContentResolver.jpegBytesForOpenAI(uri: Uri): ByteArray {
         scaled.compress(Bitmap.CompressFormat.JPEG, 70, output)
         output.toByteArray()
     }
+}
+
+private fun RecipeBatch.replacing(recipe: Recipe): RecipeBatch {
+    return copy(recipes = recipes.map { if (it.id == recipe.id) recipe else it })
 }
 
 @Composable private fun secondaryText() = if (androidx.compose.foundation.isSystemInDarkTheme()) com.zeekrbaha.fridgechef.ui.theme.InkSoftDark else com.zeekrbaha.fridgechef.ui.theme.InkSoftLight

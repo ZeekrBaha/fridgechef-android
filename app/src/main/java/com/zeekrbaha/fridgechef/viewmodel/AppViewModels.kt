@@ -6,7 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.zeekrbaha.fridgechef.Dependencies
 import com.zeekrbaha.fridgechef.data.DailyPicks
 import com.zeekrbaha.fridgechef.data.MealType
+import com.zeekrbaha.fridgechef.data.Recipe
 import com.zeekrbaha.fridgechef.data.RecipeBatch
+import com.zeekrbaha.fridgechef.data.RecipeSource
 import com.zeekrbaha.fridgechef.data.RecipeStyle
 import com.zeekrbaha.fridgechef.data.ThemePreference
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,11 +85,74 @@ class RecipesViewModel(private val dependencies: Dependencies) : ViewModel() {
     private val _batches = MutableStateFlow<List<RecipeBatch>>(emptyList())
     val batches: StateFlow<List<RecipeBatch>> = _batches.asStateFlow()
 
+    private val _filter = MutableStateFlow(RecipeFilter.All)
+    val filter: StateFlow<RecipeFilter> = _filter.asStateFlow()
+
     fun load() {
         viewModelScope.launch {
             _batches.value = dependencies.recipeStore.loadBatches()
         }
     }
+
+    fun setFilter(filter: RecipeFilter) {
+        _filter.value = filter
+    }
+
+    fun visibleBatches(): List<RecipeBatch> {
+        val batches = _batches.value
+        if (_filter.value == RecipeFilter.All) return batches
+        return batches.mapNotNull { batch ->
+            val favorites = batch.recipes.filter { it.isFavorite }
+            if (favorites.isEmpty()) null else batch.copy(recipes = favorites)
+        }
+    }
+
+    fun createRecipe(recipe: Recipe, onSaved: (RecipeBatch) -> Unit = {}) {
+        viewModelScope.launch {
+            val batch = dependencies.recipeStore.save(
+                RecipeBatch(recipes = listOf(recipe), source = RecipeSource.User),
+            )
+            load()
+            onSaved(batch)
+        }
+    }
+
+    fun updateRecipe(recipe: Recipe, batchId: String, onSaved: (Recipe) -> Unit = {}) {
+        viewModelScope.launch {
+            val updated = dependencies.recipeStore.update(recipe, batchId)
+            load()
+            onSaved(updated)
+        }
+    }
+
+    fun setFavorite(recipe: Recipe, isFavorite: Boolean, onSaved: (Recipe) -> Unit = {}) {
+        viewModelScope.launch {
+            val updated = dependencies.recipeStore.setFavorite(recipe.id, isFavorite)
+            load()
+            onSaved(updated)
+        }
+    }
+
+    fun deleteRecipe(recipeId: String, onDeleted: (RecipeBatch?) -> Unit = {}) {
+        viewModelScope.launch {
+            val batch = dependencies.recipeStore.deleteRecipe(recipeId)
+            load()
+            onDeleted(batch)
+        }
+    }
+
+    fun deleteBatch(batchId: String, onDeleted: () -> Unit = {}) {
+        viewModelScope.launch {
+            dependencies.recipeStore.deleteBatch(batchId)
+            load()
+            onDeleted()
+        }
+    }
+}
+
+enum class RecipeFilter {
+    All,
+    Favorites,
 }
 
 class SettingsViewModel(private val dependencies: Dependencies) : ViewModel() {
