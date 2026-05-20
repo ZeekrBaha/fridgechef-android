@@ -98,14 +98,7 @@ class RecipesViewModel(private val dependencies: Dependencies) : ViewModel() {
         _filter.value = filter
     }
 
-    fun visibleBatches(): List<RecipeBatch> {
-        val batches = _batches.value
-        if (_filter.value == RecipeFilter.All) return batches
-        return batches.mapNotNull { batch ->
-            val favorites = batch.recipes.filter { it.isFavorite }
-            if (favorites.isEmpty()) null else batch.copy(recipes = favorites)
-        }
-    }
+    fun visibleBatches(): List<RecipeBatch> = applyFilter(_batches.value, _filter.value)
 
     fun createRecipe(recipe: Recipe, onSaved: (RecipeBatch) -> Unit = {}, onError: (String) -> Unit = {}) {
         viewModelScope.launch {

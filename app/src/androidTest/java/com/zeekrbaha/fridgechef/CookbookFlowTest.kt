@@ -123,7 +123,7 @@ class CookbookFlowTest {
         rule.onNodeWithText("Cancel").performClick()
         rule.onNodeWithText("Discard changes?").assertIsDisplayed()
         rule.onNodeWithText("Discard").performClick()
-        rule.onNodeWithText("No saved recipe batches yet.").assertIsDisplayed()
+        rule.onNodeWithText("No recipes yet").assertIsDisplayed()
     }
 
     @Test
@@ -153,7 +153,7 @@ class CookbookFlowTest {
         rule.onNodeWithText("Delete this recipe?").assertIsDisplayed()
         rule.onNodeWithText("Delete").performClick()
         rule.waitForIdle()
-        rule.onNodeWithText("No saved recipe batches yet.").assertIsDisplayed()
+        rule.onNodeWithText("No recipes yet").assertIsDisplayed()
     }
 
     @Test
@@ -165,7 +165,7 @@ class CookbookFlowTest {
         rule.onNodeWithTag("recipes.delete.batch").performClick()
         rule.onNodeWithText("Delete").performClick()
         rule.waitForIdle()
-        rule.onNodeWithText("No saved recipe batches yet.").assertIsDisplayed()
+        rule.onNodeWithText("No recipes yet").assertIsDisplayed()
     }
 
     @Test
@@ -182,7 +182,7 @@ class CookbookFlowTest {
         rule.onNodeWithTag("recipes.delete.batch").performClick()
         rule.onNodeWithText("Delete").performClick()
         rule.waitForIdle()
-        rule.onNodeWithText("No saved recipe batches yet.").assertIsDisplayed()
+        rule.onNodeWithText("No recipes yet").assertIsDisplayed()
     }
 
     @Test

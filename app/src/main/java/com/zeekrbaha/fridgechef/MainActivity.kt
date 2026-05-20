@@ -110,7 +110,20 @@ import com.zeekrbaha.fridgechef.viewmodel.FridgeChefViewModelFactory
 import com.zeekrbaha.fridgechef.viewmodel.RecipeFilter
 import com.zeekrbaha.fridgechef.viewmodel.RecipesViewModel
 import com.zeekrbaha.fridgechef.viewmodel.SettingsViewModel
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material.icons.outlined.Restaurant
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
+import com.zeekrbaha.fridgechef.ui.theme.Fraunces
+import com.zeekrbaha.fridgechef.viewmodel.applyFilter
+import com.zeekrbaha.fridgechef.viewmodel.groupBatches
 import java.io.ByteArrayOutputStream
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.math.max
 
@@ -403,14 +416,7 @@ private fun RecipesScreen(
 ) {
     val batches by viewModel.batches.collectAsState()
     val filter by viewModel.filter.collectAsState()
-    val visibleBatches = if (filter == RecipeFilter.All) {
-        batches
-    } else {
-        batches.mapNotNull { batch ->
-            val favorites = batch.recipes.filter { it.isFavorite }
-            if (favorites.isEmpty()) null else batch.copy(recipes = favorites)
-        }
-    }
+    val groups = groupBatches(applyFilter(batches, filter), Instant.now())
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<RecipeBatch?>(null) }
     LaunchedEffect(Unit) { viewModel.load() }
@@ -433,46 +439,23 @@ private fun RecipesScreen(
                 FilterButton("Favorites", "recipes.filter.favorites", filter == RecipeFilter.Favorites) { viewModel.setFilter(RecipeFilter.Favorites) }
             }
         }
-        if (visibleBatches.isEmpty()) {
-            item { Text("No saved recipe batches yet.", style = MaterialTheme.typography.bodyMedium, color = secondaryText()) }
+        if (groups.isEmpty()) {
+            item { RecipesEmptyState(filter) }
         } else {
-            items(visibleBatches) { batch ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().testTag("recipes.row.${batch.recipes.firstOrNull()?.title.orEmpty().recipeTagSlug()}").clickable {
-                        if (batch.source == RecipeSource.User && batch.recipes.size == 1) {
-                            onRecipe(batch, batch.recipes.first())
-                        } else {
-                            onBatch(batch)
-                        }
-                    },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    shape = RoundedCornerShape(8.dp),
-                ) {
-                    Row(Modifier.padding(Space.s16), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.s4)) {
-                            Text(batch.recipes.firstOrNull()?.title ?: "Recipe batch", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                            Text("${batch.recipes.size} recipes · ${batch.source.name.lowercase()}", style = MaterialTheme.typography.labelMedium, color = secondaryText())
-                        }
-                        IconButton(
-                            onClick = {
-                                viewModel.toggleBatchFavorite(
-                                    batch,
-                                    onSaved = {},
-                                    onError = { errorMessage = it },
-                                )
-                            },
-                            modifier = Modifier.testTag("recipes.favorite.${batch.recipes.firstOrNull()?.title.orEmpty().recipeTagSlug()}"),
-                        ) {
-                            Icon(
-                                if (batch.recipes.all { it.isFavorite }) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                contentDescription = "Favorite batch",
-                                tint = terracotta(),
-                            )
-                        }
-                        IconButton(onClick = { pendingDelete = batch }, modifier = Modifier.testTag("recipes.delete.batch")) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Delete batch", tint = terracotta())
-                        }
-                    }
+            groups.forEach { group ->
+                item(key = "header-${group.title}") {
+                    Text(group.title, style = MaterialTheme.typography.labelSmall, color = secondaryText())
+                }
+                items(group.batches, key = { it.id }) { batch ->
+                    RecipeRow(
+                        batch = batch,
+                        onClick = {
+                            if (batch.source == RecipeSource.User && batch.recipes.size == 1) onRecipe(batch, batch.recipes.first())
+                            else onBatch(batch)
+                        },
+                        onToggleFavorite = { viewModel.toggleBatchFavorite(batch, onError = { errorMessage = it }) },
+                        onDelete = { pendingDelete = batch },
+                    )
                 }
             }
         }
@@ -514,6 +497,105 @@ private fun FilterButton(label: String, tag: String, selected: Boolean, onClick:
             contentColor = if (selected) sage() else secondaryText(),
         ),
     ) { Text(label) }
+}
+
+private val rowTimeFormatter = DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.US)
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RecipeRow(batch: RecipeBatch, onClick: () -> Unit, onToggleFavorite: () -> Unit, onDelete: () -> Unit) {
+    val slug = batch.recipes.firstOrNull()?.title.orEmpty().recipeTagSlug()
+    val isSingleUser = batch.source == RecipeSource.User && batch.recipes.size == 1
+    val title = batch.recipes.firstOrNull()?.title ?: "Recipe batch"
+    val chips = if (isSingleUser) batch.recipes.first().ingredients else batch.recipes.drop(1).map { it.title }
+    val count = batch.recipes.size
+    val meta = "$count ${if (count == 1) "recipe" else "recipes"} · ${rowTimeFormatter.format(batch.createdAt.atZone(ZoneId.systemDefault()))}"
+    val allFavorite = batch.recipes.isNotEmpty() && batch.recipes.all { it.isFavorite }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().testTag("recipes.row.$slug").clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Row(Modifier.height(IntrinsicSize.Min)) {
+            Box(
+                Modifier
+                    .padding(start = Space.s16, top = Space.s16, bottom = Space.s16)
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .background(if (batch.source == RecipeSource.User) terracotta() else sage(), RoundedCornerShape(2.dp)),
+            )
+            Column(
+                Modifier.weight(1f).padding(start = Space.s12, top = Space.s16, bottom = Space.s16),
+                verticalArrangement = Arrangement.spacedBy(Space.s4),
+            ) {
+                Text(
+                    title,
+                    style = TextStyle(fontFamily = Fraunces, fontWeight = FontWeight.Bold, fontSize = 17.sp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(meta, style = MaterialTheme.typography.labelMedium, color = secondaryText())
+                if (chips.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.s4), verticalArrangement = Arrangement.spacedBy(Space.s4)) {
+                        chips.take(3).forEach { RecipeChip(it) }
+                        if (chips.size > 3) RecipeChip("+${chips.size - 3}")
+                    }
+                }
+            }
+            Column {
+                IconButton(onClick = onToggleFavorite, modifier = Modifier.testTag("recipes.favorite.$slug")) {
+                    Icon(
+                        if (allFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        contentDescription = "Favorite batch",
+                        tint = terracotta(),
+                    )
+                }
+                IconButton(onClick = onDelete, modifier = Modifier.testTag("recipes.delete.batch")) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Delete batch", tint = terracotta())
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecipeChip(text: String) {
+    Box(
+        Modifier
+            .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.07f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 7.dp, vertical = 3.dp),
+    ) {
+        Text(text, style = MaterialTheme.typography.labelSmall, color = secondaryText(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun RecipesEmptyState(filter: RecipeFilter) {
+    Column(
+        Modifier.fillMaxWidth().padding(top = Space.s48),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Space.s8),
+    ) {
+        Icon(
+            if (filter == RecipeFilter.Favorites) Icons.Outlined.FavoriteBorder else Icons.Outlined.Restaurant,
+            contentDescription = null,
+            tint = secondaryText(),
+            modifier = Modifier.size(52.dp),
+        )
+        Text(
+            if (filter == RecipeFilter.Favorites) "No favorites yet" else "No recipes yet",
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Text(
+            if (filter == RecipeFilter.Favorites) "Tap the heart on a recipe to favorite it." else "Tap + to add one, or generate from Catalog.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = secondaryText(),
+            textAlign = TextAlign.Center,
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
