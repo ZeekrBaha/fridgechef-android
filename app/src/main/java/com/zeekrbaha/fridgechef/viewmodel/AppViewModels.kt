@@ -47,15 +47,15 @@ class CatalogViewModel(private val dependencies: Dependencies) : ViewModel() {
 
     fun generateDish(dishName: String) {
         if (dishName.isBlank()) return
-        run { dependencies.openAIClient.suggestRecipes(dishName.trim()) }
+        launchGenerate { dependencies.openAIClient.suggestRecipes(dishName.trim()) }
     }
 
     fun generateMeal(meal: MealType, style: RecipeStyle? = null) {
-        run { dependencies.openAIClient.suggestRecipes(meal, style) }
+        launchGenerate { dependencies.openAIClient.suggestRecipes(meal, style) }
     }
 
     fun generateImage(imageJpeg: ByteArray) {
-        run { dependencies.openAIClient.suggestRecipes(imageJpeg) }
+        launchGenerate { dependencies.openAIClient.suggestRecipes(imageJpeg) }
     }
 
     fun generateSurprise() {
@@ -66,7 +66,7 @@ class CatalogViewModel(private val dependencies: Dependencies) : ViewModel() {
         _state.value = CatalogState.Idle
     }
 
-    private fun run(fetch: suspend () -> List<com.zeekrbaha.fridgechef.data.Recipe>) {
+    private fun launchGenerate(fetch: suspend () -> List<com.zeekrbaha.fridgechef.data.Recipe>) {
         viewModelScope.launch {
             _state.value = CatalogState.Loading
             runCatching {

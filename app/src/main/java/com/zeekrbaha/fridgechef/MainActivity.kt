@@ -40,6 +40,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -83,6 +85,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -239,8 +242,8 @@ private fun FridgeChefApp(factory: FridgeChefViewModelFactory, settingsViewModel
                     NavigationBarItem(
                         selected = tab == Tab.Catalog,
                         onClick = { tab = Tab.Catalog },
-                        icon = { Icon(Icons.Outlined.Home, contentDescription = "Catalog tab") },
-                        label = { Text("Catalog") },
+                        icon = { Icon(Icons.Outlined.Home, contentDescription = "Home tab") },
+                        label = { Text("Home") },
                         modifier = Modifier.testTag("nav.catalog"),
                     )
                     NavigationBarItem(
@@ -315,6 +318,8 @@ private fun CatalogScreen(viewModel: CatalogViewModel, padding: PaddingValues, o
                         textStyle = MaterialTheme.typography.bodyMedium,
                         placeholder = { Text("How to cook...") },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                        keyboardActions = KeyboardActions(onGo = { viewModel.generateDish(query) }),
                         trailingIcon = {
                             TextButton(onClick = { viewModel.generateDish(query) }, modifier = Modifier.testTag("catalog.go.button")) { Text("Go") }
                         },
@@ -590,7 +595,7 @@ private fun RecipesEmptyState(filter: RecipeFilter) {
             color = MaterialTheme.colorScheme.onBackground,
         )
         Text(
-            if (filter == RecipeFilter.Favorites) "Tap the heart on a recipe to favorite it." else "Tap + to add one, or generate from Catalog.",
+            if (filter == RecipeFilter.Favorites) "Tap the heart on a recipe to favorite it." else "Tap + to add one, or generate from Home.",
             style = MaterialTheme.typography.bodyMedium,
             color = secondaryText(),
             textAlign = TextAlign.Center,
