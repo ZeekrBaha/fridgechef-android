@@ -2,7 +2,7 @@
 
 > Type a dish, pick a meal idea, snap your fridge, or save your own recipe.
 
-Android port of FridgeChef with a recipe catalog home screen, local cookbook storage, and cookbook phase 1 features for creating, editing, favoriting, filtering, and deleting recipes. The app follows the cross-platform contract in `recipe-ingredients-ios/docs/CROSS_PLATFORM_SPEC.md` and keeps the same local-first model: no account, no backend, no cloud sync.
+Android port of FridgeChef — recipe catalog home screen, personal cookbook with full CRUD, redesigned list rows, date grouping, and 69 tests across five layers. Follows the cross-platform contract in `recipe-ingredients-ios/docs/CROSS_PLATFORM_SPEC.md`. Local-first: no account, no backend, no cloud sync.
 
 <p align="center">
   <img src="docs/screenshots/catalog.png" alt="FridgeChef Android catalog screen" width="260" />
@@ -23,17 +23,25 @@ Android port of FridgeChef with a recipe catalog home screen, local cookbook sto
   - Breakfast / Lunch / Dinner idea cards
   - From my fridge photo flow
   - magic surprise button
-- Daily meal-card picks cached once per calendar day
-- Cookbook Phase 1 recipe management
+  - Return/Go key submits the dish field
+- Daily meal-card picks cached once per calendar day; silently refreshed when stale
+- Recipes list redesigned to match iOS spec
+  - Fraunces bold title, accent strip (terracotta = AI, sage = user)
+  - FlowRow ingredient chips
+  - Interactive heart button per row (one tap to favorite/unfavorite)
+  - Batches grouped by date (Today / Yesterday / This Week / month)
+  - Empty-state illustration when no recipes saved
+- Personal cookbook: full CRUD
   - create a custom recipe
-  - edit generated or user-created recipes
-  - favorite recipes
-  - filter favorites in Recipes
-  - delete a single recipe
-  - delete a full batch
-- Local SQLite persistence using the portable schema from the iOS spec
-- SharedPreferences for theme and daily-pick cache
-- Real OpenAI chat completions flow for app builds, with a fake client available for deterministic UI tests
+  - edit any recipe (AI-generated or user-created)
+  - favorite recipes with optimistic toggle + revert on error
+  - filter All / Favorites
+  - delete a single recipe or an entire batch
+  - delete from the edit form
+- `RecipeFormValidator` pure function for save-button enablement (testable without Compose)
+- Local SQLite with foreign-key constraints; portable schema from iOS spec
+- `Preferences` interface extracted for VM testability; `SharedPreferences` implementation
+- Real OpenAI client for production; fake client for deterministic builds and UI tests
 
 ## Walkthrough
 
@@ -51,7 +59,7 @@ The home tab combines a dish input, the four recipe entry points, and a surprise
 |---|---|
 | <img src="docs/screenshots/recipes.png" width="240" alt="FridgeChef Android recipes screen"> | <img src="docs/screenshots/settings.png" width="240" alt="FridgeChef Android settings screen"> |
 
-Recipes now behave like a personal cookbook: saved batches, create flow, edit flow, favorite toggle, favorites filter, and deletes. Settings keeps theme switching and key status visible.
+Recipes behave like a personal cookbook: date-grouped batches, per-row heart toggle, create/edit/delete flows, and an All / Favorites filter. Settings exposes theme switching and API-key status.
 
 ---
 
@@ -118,29 +126,37 @@ sequenceDiagram
 | Networking | Direct OpenAI Chat Completions |
 | Persistence | SQLiteOpenHelper + SharedPreferences |
 | Min Android | API 28 |
-| Tests | JUnit + Compose UI tests |
+| Tests | JUnit 4 + Robolectric + MockWebServer + Compose UI tests |
 | Project layout | Single app module |
 
 ## Project Structure
 
 ```
 recipe-ingredients-android/
-├── README.md
-├── build.gradle.kts
-├── settings.gradle.kts
-├── gradle.properties
-├── gradle/
 ├── app/
-│   ├── build.gradle.kts
 │   └── src/
-│       ├── main/
-│       │   ├── AndroidManifest.xml
-│       │   ├── java/com/zeekrbaha/fridgechef/
-│       │   ├── res/
-│       │   └── ...
-│       └── androidTest/
-├── docs/
-│   └── screenshots/
+│       ├── main/java/com/zeekrbaha/fridgechef/
+│       │   ├── MainActivity.kt          # all Compose screens + navigation
+│       │   ├── RecipeFormValidator.kt   # pure isSaveable function
+│       │   ├── FridgeChefApplication.kt # dependency wiring
+│       │   ├── data/
+│       │   │   ├── Models.kt            # Recipe, RecipeBatch, DailyPicks, enums
+│       │   │   ├── RecipeStore.kt       # interface + RecipeStoreNotFoundException
+│       │   │   ├── RecipeSqliteStore.kt # SQLiteOpenHelper implementation
+│       │   │   └── AppPreferences.kt    # Preferences interface + SharedPrefs impl
+│       │   ├── network/
+│       │   │   ├── OpenAIClient.kt      # interface + OpenAIChatClient (endpoint injectable)
+│       │   │   ├── FakeOpenAIClient.kt  # deterministic fake for tests/fake builds
+│       │   │   ├── APIKeyProvider.kt    # interface + BuildConfig implementation
+│       │   │   ├── OpenAIError.kt       # sealed error types
+│       │   │   └── Prompts.kt           # system prompt strings
+│       │   ├── viewmodel/
+│       │   │   ├── AppViewModels.kt     # CatalogVM, RecipesVM, SettingsVM, factory
+│       │   │   └── RecipeGrouping.kt    # pure groupBatches + applyFilter functions
+│       │   └── ui/theme/Theme.kt        # Material3 theme, Fraunces font
+│       ├── test/                        # 59 JVM unit tests (Robolectric + MockWebServer + fakes)
+│       └── androidTest/                 # 10 instrumented tests (CookbookFlowTest)
+├── docs/screenshots/
 └── gradlew
 ```
 
@@ -160,24 +176,35 @@ Build the debug app:
 
 ## Tests
 
-Run JVM tests and build the app:
+**69 tests total** across two runners (59 JVM unit + 10 instrumented).
+
+| Suite | Count | Runner | What it covers |
+|---|---|---|---|
+| `RecipeSqliteStoreTest` | 11 | Robolectric (JVM) | Full store contract: save, load, order, setFavorite, update, deleteRecipe/Batch, cascade |
+| `OpenAIChatClientTest` | 14 | MockWebServer (JVM) | Request shape, model, auth header, response_format, decode, 401/4xx/5xx/Decoding errors |
+| `CatalogViewModelTest` | 10 | JVM fakes | 6 generate paths (dish/meal/image/surprise/blank/error) + 4 daily-picks lifecycle states |
+| `RecipesViewModelTest` | 6 | JVM fakes | create, update, favorite toggle (optimistic + revert), delete cascade |
+| `RecipeFormValidatorTest` | 6 | JVM pure | `isSaveable` — blank title, whitespace title, missing ingredients/steps, valid form |
+| `SettingsViewModelTest` | 4 | JVM fakes | clearRecipes success/error, setTheme, hasApiKey |
+| `RecipeGroupingTest` | 3 | JVM pure | Date bucket logic (Today / Yesterday / This Week / month) |
+| `RecipeFilterTest` | 2 | JVM pure | All vs Favorites filter |
+| `AppPreferencesLogicTest` | 1 | JVM | Daily-picks staleness check |
+| `PromptContractTest` | 2 | JVM pure | System prompt string contracts |
+| `CookbookFlowTest` | 10 | Instrumented | End-to-end flows on real emulator |
+
+Run JVM tests:
 
 ```bash
-GRADLE_USER_HOME=/private/tmp/gradlehome ./gradlew testDebugUnitTest assembleDebug assembleDebugAndroidTest
+./gradlew testDebugUnitTest
 ```
 
-Run connected emulator UI tests:
+Run connected emulator UI tests (`-PUITEST_FAKE_OPENAI=true` swaps in deterministic responses):
 
 ```bash
-GRADLE_USER_HOME=/private/tmp/gradlehome ./gradlew -PUITEST_FAKE_OPENAI=true connectedDebugAndroidTest
+./gradlew -PUITEST_FAKE_OPENAI=true connectedDebugAndroidTest
 ```
 
-`UITEST_FAKE_OPENAI=true` swaps in deterministic recipe and daily-pick responses for instrumented UI runs. Normal app builds still use the real OpenAI client.
-
-Current verified status:
-
-- `testDebugUnitTest assembleDebug assembleDebugAndroidTest`: passing
-- `connectedDebugAndroidTest`: 10 tests passing on `Pixel_8_API_36`
+Current verified status: all 59 JVM tests pass; `CookbookFlowTest` 10/10 on `Pixel_8_API_36`.
 
 ## GitHub
 
