@@ -29,7 +29,10 @@ interface OpenAIClient {
     suspend fun dailyPicks(): DailyPicks
 }
 
-class OpenAIChatClient(private val keyProvider: APIKeyProvider) : OpenAIClient {
+class OpenAIChatClient(
+    private val keyProvider: APIKeyProvider,
+    private val endpoint: String = "https://api.openai.com/v1/chat/completions",
+) : OpenAIClient {
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun suggestRecipes(ingredients: List<String>): List<Recipe> {
@@ -86,7 +89,7 @@ class OpenAIChatClient(private val keyProvider: APIKeyProvider) : OpenAIClient {
         if (apiKey.isBlank()) throw OpenAIError.Unauthorized
 
         runCatching {
-            val connection = (URL(ENDPOINT).openConnection() as HttpURLConnection).apply {
+            val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("Authorization", "Bearer $apiKey")
                 setRequestProperty("Content-Type", "application/json")
@@ -180,9 +183,6 @@ class OpenAIChatClient(private val keyProvider: APIKeyProvider) : OpenAIClient {
         }
     }
 
-    private companion object {
-        const val ENDPOINT = "https://api.openai.com/v1/chat/completions"
-    }
 }
 
 @Serializable

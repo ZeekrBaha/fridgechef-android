@@ -197,6 +197,7 @@ class CookbookFlowTest {
     private fun clearRecipes() {
         openSettings()
         rule.onNodeWithText("Clear all recipes").performClick()
+        rule.onNodeWithText("Clear all").performClick()
         openRecipes()
         rule.waitForIdle()
     }

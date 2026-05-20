@@ -12,6 +12,9 @@ class FakeRecipeStore(initial: List<RecipeBatch> = emptyList()) : RecipeStore {
     /** When true, [setFavorite] throws — used to exercise the optimistic-revert path. */
     var failSetFavorite = false
 
+    /** When true, [deleteAll] throws — used to exercise the clear-recipes error path. */
+    var failDeleteAll = false
+
     override suspend fun save(batch: RecipeBatch): RecipeBatch {
         batches.removeAll { it.id == batch.id }
         batches.add(0, batch)
@@ -22,7 +25,10 @@ class FakeRecipeStore(initial: List<RecipeBatch> = emptyList()) : RecipeStore {
 
     override suspend fun batchById(id: String): RecipeBatch? = batches.firstOrNull { it.id == id }
 
-    override suspend fun deleteAll() { batches.clear() }
+    override suspend fun deleteAll() {
+        if (failDeleteAll) throw RuntimeException("db error")
+        batches.clear()
+    }
 
     override suspend fun update(recipe: Recipe, batchId: String): Recipe {
         val idx = batches.indexOfFirst { it.id == batchId }

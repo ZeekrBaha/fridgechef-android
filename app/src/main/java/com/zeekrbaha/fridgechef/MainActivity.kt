@@ -726,7 +726,7 @@ private fun CreateEditRecipeScreen(
     }
     val currentSnapshot = RecipeFormSnapshot(title.trim(), description.trim(), ingredients, steps, estimatedTime.trim())
     val hasUnsavedChanges = currentSnapshot != initialSnapshot
-    val isValid = title.trim().isNotEmpty() && ingredients.any { it.trim().isNotEmpty() } && steps.any { it.trim().isNotEmpty() }
+    val isValid = RecipeFormValidator.isSaveable(title, ingredients, steps)
     var showDiscardDialog by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -918,6 +918,7 @@ private fun SectionList(title: String, values: List<String>) {
 private fun SettingsScreen(viewModel: SettingsViewModel, padding: PaddingValues, onCleared: () -> Unit) {
     val theme by viewModel.theme.collectAsState()
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showClearAllDialog by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(padding),
         contentPadding = PaddingValues(Space.s24),
@@ -938,12 +939,7 @@ private fun SettingsScreen(viewModel: SettingsViewModel, padding: PaddingValues,
         }
         item {
             TextButton(
-                onClick = {
-                    viewModel.clearRecipes(
-                        onDone = onCleared,
-                        onError = { errorMessage = it },
-                    )
-                },
+                onClick = { showClearAllDialog = true },
                 colors = ButtonDefaults.textButtonColors(contentColor = terracotta()),
             ) { Text("Clear all recipes") }
         }
@@ -954,6 +950,23 @@ private fun SettingsScreen(viewModel: SettingsViewModel, padding: PaddingValues,
             confirmButton = { TextButton(onClick = { errorMessage = null }) { Text("OK") } },
             title = { Text("Something went wrong") },
             text = { Text(message) },
+        )
+    }
+    if (showClearAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearAllDialog = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearAllDialog = false
+                    viewModel.clearRecipes(
+                        onDone = onCleared,
+                        onError = { errorMessage = it },
+                    )
+                }) { Text("Clear all") }
+            },
+            dismissButton = { TextButton(onClick = { showClearAllDialog = false }) { Text("Cancel") } },
+            title = { Text("Clear all recipes?") },
+            text = { Text("This permanently removes every saved recipe.") },
         )
     }
 }

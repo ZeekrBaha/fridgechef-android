@@ -77,6 +77,19 @@ class RecipesViewModelTest {
     }
 
     @Test
+    fun updateRecipePersistsChangedTitle() = runTest {
+        val r = recipe("Original")
+        val batch = RecipeBatch(recipes = listOf(r))
+        val store = FakeRecipeStore(listOf(batch))
+        val vm = RecipesViewModel(deps(store))
+        vm.load(); advanceUntilIdle()
+
+        vm.updateRecipe(r.copy(title = "Updated"), batch.id); advanceUntilIdle()
+
+        assertEquals("Updated", store.batchById(batch.id)!!.recipes.first().title)
+    }
+
+    @Test
     fun deletingTheOnlyRecipeCascadesItsBatch() = runTest {
         val solo = recipe("Solo")
         val batch = RecipeBatch(recipes = listOf(solo), source = RecipeSource.User)
