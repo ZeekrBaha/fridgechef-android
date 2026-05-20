@@ -25,5 +25,5 @@ class FridgeChefApplication : Application() {
 data class Dependencies(
     val openAIClient: com.zeekrbaha.fridgechef.network.OpenAIClient,
     val recipeStore: com.zeekrbaha.fridgechef.data.RecipeStore,
-    val preferences: AppPreferences,
+    val preferences: com.zeekrbaha.fridgechef.data.Preferences,
 )

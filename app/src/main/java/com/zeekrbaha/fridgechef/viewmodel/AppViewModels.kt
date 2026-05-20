@@ -142,17 +142,19 @@ class RecipesViewModel(private val dependencies: Dependencies) : ViewModel() {
     }
 
     fun toggleBatchFavorite(batch: RecipeBatch, onSaved: (RecipeBatch) -> Unit = {}, onError: (String) -> Unit = {}) {
+        val targetFavorite = !batch.recipes.all { it.isFavorite }
+        // Optimistic: flip the heart immediately, then reconcile/revert from the store.
+        _batches.value = _batches.value.map { current ->
+            if (current.id == batch.id) current.copy(recipes = current.recipes.map { it.copy(isFavorite = targetFavorite) }) else current
+        }
         viewModelScope.launch {
             runCatching {
-                val targetFavorite = !batch.recipes.all { it.isFavorite }
                 batch.recipes.forEach { dependencies.recipeStore.setFavorite(it.id, targetFavorite) }
-                dependencies.recipeStore.batchById(batch.id)
-                    ?: batch.copy(recipes = batch.recipes.map { it.copy(isFavorite = targetFavorite) })
-            }.onSuccess { updatedBatch ->
-                load()
-                onSaved(updatedBatch)
+            }.onSuccess {
+                _batches.value = dependencies.recipeStore.loadBatches()
+                onSaved(_batches.value.firstOrNull { it.id == batch.id } ?: batch)
             }.onFailure { error ->
-                load()
+                _batches.value = dependencies.recipeStore.loadBatches()
                 onError(error.message ?: "Couldn't update favorite.")
             }
         }

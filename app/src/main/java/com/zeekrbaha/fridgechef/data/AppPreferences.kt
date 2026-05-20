@@ -8,28 +8,36 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
-class AppPreferences(context: Context) {
+interface Preferences {
+    val theme: StateFlow<ThemePreference>
+    fun setTheme(theme: ThemePreference)
+    fun readDailyPicks(): DailyPicks?
+    fun writeDailyPicks(picks: DailyPicks)
+    fun dailyPicksAreFromToday(picks: DailyPicks): Boolean
+}
+
+class AppPreferences(context: Context) : Preferences {
     private val prefs = context.getSharedPreferences("fridgechef", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
 
     private val _theme = MutableStateFlow(loadTheme())
-    val theme: StateFlow<ThemePreference> = _theme
+    override val theme: StateFlow<ThemePreference> = _theme
 
-    fun setTheme(theme: ThemePreference) {
+    override fun setTheme(theme: ThemePreference) {
         prefs.edit().putInt(THEME_KEY, theme.ordinal).apply()
         _theme.value = theme
     }
 
-    fun readDailyPicks(): DailyPicks? {
+    override fun readDailyPicks(): DailyPicks? {
         val raw = prefs.getString(DAILY_PICKS_KEY, null) ?: return null
         return runCatching { json.decodeFromString<DailyPicks>(raw) }.getOrNull()
     }
 
-    fun writeDailyPicks(picks: DailyPicks) {
+    override fun writeDailyPicks(picks: DailyPicks) {
         prefs.edit().putString(DAILY_PICKS_KEY, json.encodeToString(DailyPicks.serializer(), picks)).apply()
     }
 
-    fun dailyPicksAreFromToday(picks: DailyPicks): Boolean {
+    override fun dailyPicksAreFromToday(picks: DailyPicks): Boolean {
         val zone = ZoneId.systemDefault()
         val savedDate = Instant.ofEpochMilli(picks.savedAtEpochMillis).atZone(zone).toLocalDate()
         return savedDate == LocalDate.now(zone)
